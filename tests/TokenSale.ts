@@ -2,15 +2,18 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect } from "chai";
 import { BigNumber } from "ethers";
 import { ethers } from "hardhat";
-import { MyToken, MyToken__factory, TokenSale, TokenSale__factory } from "../typechain-types";
+import { MyNFT, MyNFT__factory, MyToken, MyToken__factory, TokenSale, TokenSale__factory } from "../typechain-types";
 
 const TEST_TOKEN_RATIO = 1;
+const TEST_TOKEN_PRICE = ethers.utils.parseEther("0.02");
 const TEST_TOKEN_MINT = ethers.utils.parseEther("1");
+const TEST_NFT_ID = 42;
 
 describe("NFT Shop", async () => {
 
     let tokenSaleContract:TokenSale;
     let tokenContract:MyToken;
+    let nftContract:MyNFT;
     let deployer:SignerWithAddress;
     let account1:SignerWithAddress;
     let account2:SignerWithAddress;
@@ -22,20 +25,29 @@ describe("NFT Shop", async () => {
     tokenContract = await tokenContractfactory.deploy();
     await tokenContract.deployed();
 
+    const nftContractfactory = new MyNFT__factory(deployer);
+    nftContract = await nftContractfactory.deploy();
+    await nftContract.deployed();
+
 
     const tokenSaleContractFactory = new TokenSale__factory(deployer);
-    tokenSaleContract = await tokenSaleContractFactory.deploy(TEST_TOKEN_RATIO,tokenContract.address);
+    tokenSaleContract = await tokenSaleContractFactory.deploy(TEST_TOKEN_RATIO,TEST_TOKEN_PRICE,tokenContract.address,nftContract.address);
     await tokenSaleContract.deployed();
 
     const minterRole = await tokenContract.MINTER_ROLE();
     const giveTokenMintRoleTx = await tokenContract.grantRole(minterRole,tokenSaleContract.address);
     await giveTokenMintRoleTx.wait()
 
+
+    const nftMinterRole = await nftContract.MINTER_ROLE();
+    const giveNftMintRoleTx = await nftContract.grantRole(nftMinterRole,tokenSaleContract.address);
+    await giveNftMintRoleTx.wait()
+
   });
 
   describe("When the Shop contract is deployed", async () => {
     it("defines the ratio as provided in parameters", async () => {
-        const ratio = tokenSaleContract.ratio();
+        const ratio = await tokenSaleContract.ratio();
       expect(ratio).to.eq(TEST_TOKEN_RATIO)
     });
 
@@ -77,29 +89,89 @@ describe("NFT Shop", async () => {
       const tokenBalanceAftereMint = await tokenContract.balanceOf(account1.address)
 
       expect(tokenBalanceAftereMint.sub(tokenBalanceBeforeMint)).to.eq(TEST_TOKEN_MINT.mul(TEST_TOKEN_RATIO));
+      console.log(await tokenContract.balanceOf(account1.address))
 
     });
-  });
+  
 
   describe("When a user burns an ERC20 at the Shop contract", async () => {
+    let tokenBalanceBeforeBurn:BigNumber;
+    let burnAmount:BigNumber;
+    let ethBalanceBeforeBurn:BigNumber;
+    let burnTxGasCost:BigNumber;
+    let allowTxGasCost:BigNumber;
+    beforeEach(async () => {
+       tokenBalanceBeforeBurn = await tokenContract.balanceOf(account1.address)
+       ethBalanceBeforeBurn = await account1.getBalance()
+       burnAmount = tokenBalanceBeforeBurn.div(2)
+
+      const allowTx = await tokenContract.connect(account1).approve(tokenSaleContract.address,burnAmount)
+      const allowTxeceipt = await allowTx.wait()
+      allowTxGasCost = allowTxeceipt.gasUsed.mul(allowTxeceipt.effectiveGasPrice)
+
+      const burnTx = await tokenSaleContract.connect(account1).burnTokens(burnAmount)
+      const burnTxReceipt = await burnTx.wait()
+      burnTxGasCost = burnTxReceipt.gasUsed.mul(burnTxReceipt.effectiveGasPrice)
+
+
+
+
+    });
     it("gives the correct amount of ETH", async () => {
-      throw new Error("Not implemented");
+      const ethBalanceAfterBurn = await account1.getBalance()
+      const diff = ethBalanceAfterBurn.sub(ethBalanceBeforeBurn)
+      const costs = allowTxGasCost.add(burnTxGasCost)
+      expect(diff).to.eq(burnAmount.div(TEST_TOKEN_RATIO).sub(costs))
+
+      
     });
 
     it("burns the correct amount of tokens", async () => {
-      throw new Error("Not implemented");
+      const tokenBalanceAfterBurn = await tokenContract.balanceOf(account1.address)
+      const diff = tokenBalanceBeforeBurn.sub(tokenBalanceAfterBurn);
+      expect(diff).to.eq(burnAmount);
+
+
     });
   });
 
   describe("When a user buys an NFT from the Shop contract", async () => {
+    let tokenBalanceBeforeBuyNFT:BigNumber
+
+    beforeEach(async () => {
+
+      tokenBalanceBeforeBuyNFT = await tokenContract.balanceOf(account1.address);
+
+      const allowTx = await tokenContract.connect(account1).approve(tokenSaleContract.address,TEST_TOKEN_PRICE)
+      const allowTxeceipt = await allowTx.wait()
+
+      const buyTx = await tokenSaleContract.connect(account1.address).buyNFT(TEST_NFT_ID);
+      await buyTx.wait();
+
+    });
     it("charges the correct amount of ERC20 tokens", async () => {
-      throw new Error("Not implemented");
+      const tokenBalanceAfterBuyNFT = await tokenContract.balanceOf(account1.address);
+      const diff = tokenBalanceBeforeBuyNFT.sub(tokenBalanceAfterBuyNFT)
+      expect(diff).to.eq(TEST_TOKEN_PRICE)
     });
 
     it("gives the correct NFT", async () => {
-      throw new Error("Not implemented");
+      const nftOwner = await nftContract.ownerOf(TEST_NFT_ID)
+      expect(nftOwner).to.eq(account1.address)
     });
+
+    it("updates the owner pool account correctly", async () => {
+      const withdrawableAMount = await tokenSaleContract.withdrawableAmount()
+      expect(withdrawableAMount).to.eq(TEST_TOKEN_PRICE.div(2));
+     
+    });
+
+
   });
+
+
+});
+
 
   describe("When a user burns their NFT at the Shop contract", async () => {
     it("gives the correct amount of ERC20 tokens", async () => {
@@ -113,7 +185,7 @@ describe("NFT Shop", async () => {
     });
 
     it("updates the owner pool account correctly", async () => {
-      throw new Error("Not implemented");
+     
     });
   });
 });

@@ -145,7 +145,7 @@ describe("NFT Shop", async () => {
       const allowTx = await tokenContract.connect(account1).approve(tokenSaleContract.address,TEST_TOKEN_PRICE)
       const allowTxeceipt = await allowTx.wait()
 
-      const buyTx = await tokenSaleContract.connect(account1.address).buyNFT(TEST_NFT_ID);
+      const buyTx = await tokenSaleContract.connect(account1).buyNFT(TEST_NFT_ID);
       await buyTx.wait();
 
     });
@@ -172,20 +172,4 @@ describe("NFT Shop", async () => {
 
 });
 
-
-  describe("When a user burns their NFT at the Shop contract", async () => {
-    it("gives the correct amount of ERC20 tokens", async () => {
-      throw new Error("Not implemented");
-    });
-  });
-
-  describe("When the owner withdraws from the Shop contract", async () => {
-    it("recovers the right amount of ERC20 tokens", async () => {
-      throw new Error("Not implemented");
-    });
-
-    it("updates the owner pool account correctly", async () => {
-     
-    });
-  });
 });
